@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Highway Rush</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Start Screen -->
+    <div id="screen-start" class="screen active">
+      <div class="title-container">
+        <h1 class="game-title">HIGHWAY<br><span>RUSH</span></h1>
+        <p class="subtitle">Wie weit kommst du?</p>
+      </div>
+      <button class="btn btn-primary" id="btn-play">SPIELEN</button>
+      <div class="high-score-display">
+        <span>🏆 Rekord: <span id="start-high-score">0</span></span>
+      </div>
+    </div>
+
+    <!-- Car Selection Screen -->
+    <div id="screen-car-select" class="screen">
+      <h2 class="screen-title">WÄHLE DEIN AUTO</h2>
+      <div id="car-preview-canvas-container"></div>
+      <div class="car-carousel">
+        <button class="carousel-btn" id="car-prev">&#8249;</button>
+        <div class="car-info">
+          <div class="car-name" id="car-name">Rotes Auto</div>
+          <div class="car-desc" id="car-desc">Klassisch und schnell</div>
+        </div>
+        <button class="carousel-btn" id="car-next">&#8250;</button>
+      </div>
+      <div class="car-dots" id="car-dots"></div>
+      <button class="btn btn-primary" id="btn-select-car">WEITER</button>
+      <button class="btn btn-secondary" id="btn-back-start">ZURÜCK</button>
+    </div>
+
+    <!-- Track Selection Screen -->
+    <div id="screen-track-select" class="screen">
+      <h2 class="screen-title">WÄHLE DIE STRECKE</h2>
+      <div class="track-grid" id="track-grid"></div>
+      <button class="btn btn-primary" id="btn-start-game">STARTEN!</button>
+      <button class="btn btn-secondary" id="btn-back-car">ZURÜCK</button>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="screen-game" class="screen">
+      <canvas id="game-canvas"></canvas>
+      <div id="hud">
+        <div id="hud-score">
+          <span class="hud-label">PUNKTE</span>
+          <span id="score-value">0</span>
+        </div>
+        <div id="hud-record">
+          <span class="hud-label">🏆</span>
+          <span id="record-value">0</span>
+        </div>
+        <div id="hud-speed">
+          <span class="hud-label">⚡</span>
+          <span id="speed-value">60</span>
+          <span class="hud-unit">km/h</span>
+        </div>
+      </div>
+      <button id="btn-pause" title="Pause">⏸</button>
+      <!-- Pause overlay -->
+      <div id="pause-overlay" class="hidden">
+        <div class="overlay-box">
+          <h2>PAUSE</h2>
+          <button class="btn btn-primary" id="btn-resume">WEITER</button>
+          <button class="btn btn-secondary" id="btn-quit-pause">BEENDEN</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="screen-gameover" class="screen">
+      <div class="gameover-container">
+        <h2 class="gameover-title">CRASH!</h2>
+        <div class="gameover-score">
+          <div class="score-row">
+            <span>Dein Score</span>
+            <span id="final-score">0</span>
+          </div>
+          <div class="score-row record-row" id="record-row">
+            <span>🏆 NEUER REKORD!</span>
+            <span id="final-record">0</span>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-retry">NOCHMAL</button>
+        <button class="btn btn-secondary" id="btn-home">STARTMENÜ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three.js from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/cars.js"></script>
+  <script src="js/tracks.js"></script>
+  <script src="js/traffic.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
