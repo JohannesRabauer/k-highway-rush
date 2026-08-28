@@ -9,20 +9,20 @@ const Tracks = (() => {
       id: 'city',
       name: 'Stadt',
       icon: '🏙️',
-      desc: 'Neon-Wolkenkratzer & Stadtleben',
-      skyColor: 0x1a0a2e,
-      fogColor: 0x1a0a2e,
-      fogNear: 40,
-      fogFar: 120,
-      roadColor: 0x222233,
+      desc: 'Wolkenkratzer im hellen Tageslicht',
+      skyColor: 0x6ec6ff,
+      fogColor: 0xbfe6ff,
+      fogNear: 50,
+      fogFar: 170,
+      roadColor: 0x3d3d45,
       lineColor: 0xffffff,
-      ambientColor: 0x200a50,
-      ambientIntensity: 0.6,
-      sunColor: 0x8844ff,
-      buildingColors: [0x221133, 0x112233, 0x113322, 0x331122],
-      buildingEmissive: [0x8800ff, 0x0088ff, 0x00ff88, 0xff0088],
-      hasBuildingLights: true,
-      groundColor: 0x111122,
+      ambientColor: 0xffffff,
+      ambientIntensity: 1.05,
+      sunColor: 0xfff4d6,
+      buildingColors: [0x4a6fa5, 0x6b7f8f, 0x8a97a6, 0x39506b, 0x5c7a99],
+      buildingEmissive: [0x000000],
+      hasBuildingLights: false,
+      groundColor: 0x8b95a1,
       envObjects: 'city',
     },
     {
@@ -62,6 +62,7 @@ const Tracks = (() => {
       buildingColors: [0x050515, 0x0a0520, 0x050a15],
       buildingEmissive: [0xff0066, 0x0066ff, 0x00ff44, 0xffaa00],
       hasBuildingLights: true,
+      streetLightColor: 0xffa500,
       groundColor: 0x080808,
       envObjects: 'night',
     },
@@ -171,12 +172,14 @@ const Tracks = (() => {
     sun.shadow.mapSize.height = 1024;
     scene.add(sun);
 
-    // City/night: add point lights along road
+    // Street lights only make sense for tracks with glowing neon buildings
+    // (night) — a bright daytime city or open nature scene doesn't need
+    // (or want) glowing orbs floating along the road.
     const lightPosts = [];
-    if (trackDef.id !== 'nature') {
+    if (trackDef.hasBuildingLights) {
       for (let i = 0; i < 12; i++) {
         const postLight = new THREE.PointLight(
-          trackDef.id === 'city' ? 0xaa88ff : 0xffa500,
+          trackDef.streetLightColor || 0xffa500,
           1.8, 25
         );
         postLight.position.set(8, 5, -i * 10);
