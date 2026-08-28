@@ -67,11 +67,12 @@ const Tracks = (() => {
     },
   ];
 
-  const ROAD_WIDTH = 14;   // total road width
+  const ROAD_WIDTH = 14;    // total road width
   const LANE_COUNT = 4;
   const LANE_WIDTH = ROAD_WIDTH / LANE_COUNT;
-  const SEGMENT_LENGTH = 60; // how long each road segment is
-  const NUM_SEGMENTS = 6;    // how many segments visible at once
+  const SEGMENT_LENGTH = 60;  // how long each road segment is
+  const NUM_SEGMENTS = 7;     // one extra so there's always overlap at the seam
+  const TOTAL_ROAD_LENGTH = NUM_SEGMENTS * SEGMENT_LENGTH;
 
   // Lane center X positions
   function getLaneX(lane) {
@@ -87,12 +88,12 @@ const Tracks = (() => {
     scene.background = new THREE.Color(trackDef.skyColor);
     scene.fog = new THREE.FogExp2(trackDef.fogColor, 0.018);
 
-    // Ground plane
-    const groundGeo = new THREE.PlaneGeometry(200, 1200);
+    // Ground plane – sits clearly below road (y=0) to avoid z-fighting
+    const groundGeo = new THREE.PlaneGeometry(300, 1400);
     const groundMat = new THREE.MeshLambertMaterial({ color: trackDef.groundColor });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.01;
+    ground.position.y = -0.05;   // well below road surface
     scene.add(ground);
     objects.push({ mesh: ground, isStatic: true });
 
@@ -150,47 +151,62 @@ const Tracks = (() => {
   function buildRoadSegment(trackDef) {
     const group = new THREE.Group();
 
-    // Road surface
+    // Road surface at y=0 (ground is at y=-0.05, markings stacked above)
     const roadGeo = new THREE.PlaneGeometry(ROAD_WIDTH, SEGMENT_LENGTH);
-    const roadMat = new THREE.MeshLambertMaterial({ color: trackDef.roadColor });
+    const roadMat = new THREE.MeshLambertMaterial({
+      color: trackDef.roadColor,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    });
     const road = new THREE.Mesh(roadGeo, roadMat);
     road.rotation.x = -Math.PI / 2;
-    road.position.y = 0.01;
+    road.position.y = 0;
     road.position.z = -SEGMENT_LENGTH / 2;
     group.add(road);
 
-    // Road markings (dashed lines between lanes)
-    const lineMat = new THREE.MeshBasicMaterial({ color: trackDef.lineColor });
+    // Road markings – use polygonOffset so they never flicker against the road
+    const lineMat = new THREE.MeshBasicMaterial({
+      color: trackDef.lineColor,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
     for (let lane = 1; lane < LANE_COUNT; lane++) {
       const lx = getLaneX(lane) - LANE_WIDTH / 2;
-      // Dashes
       for (let d = 0; d < 10; d++) {
         const dash = new THREE.Mesh(
-          new THREE.PlaneGeometry(0.12, 3.5),
+          new THREE.PlaneGeometry(0.14, 3.5),
           lineMat
         );
         dash.rotation.x = -Math.PI / 2;
-        dash.position.set(lx, 0.02, -d * 6 - 2);
+        dash.position.set(lx, 0, -d * 6 - 2);
         group.add(dash);
       }
     }
 
-    // Outer edge lines (solid)
-    const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    // Outer edge lines – also polygonOffset
+    const edgeMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
     [-ROAD_WIDTH / 2 + 0.15, ROAD_WIDTH / 2 - 0.15].forEach(ex => {
-      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.2, SEGMENT_LENGTH), edgeMat);
+      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.22, SEGMENT_LENGTH), edgeMat);
       edge.rotation.x = -Math.PI / 2;
-      edge.position.set(ex, 0.02, -SEGMENT_LENGTH / 2);
+      edge.position.set(ex, 0, -SEGMENT_LENGTH / 2);
       group.add(edge);
     });
 
-    // Shoulder / curb
+    // Shoulder / curb – a 3D box sitting ON the ground, not coplanar with anything
     [-1, 1].forEach(side => {
       const curb = new THREE.Mesh(
-        new THREE.BoxGeometry(0.6, 0.08, SEGMENT_LENGTH),
+        new THREE.BoxGeometry(0.6, 0.12, SEGMENT_LENGTH),
         new THREE.MeshLambertMaterial({ color: 0x888888 })
       );
-      curb.position.set(side * (ROAD_WIDTH / 2 + 0.3), 0.04, -SEGMENT_LENGTH / 2);
+      // Top of curb at y=0.06, base at y=-0.06 (below road surface plane)
+      curb.position.set(side * (ROAD_WIDTH / 2 + 0.3), 0.06, -SEGMENT_LENGTH / 2);
       group.add(curb);
     });
 
@@ -203,21 +219,31 @@ const Tracks = (() => {
 
   function buildSideObjects(trackDef, scene) {
     const objects = [];
-    const count = 30;
+    // More objects to cover the longer total road length comfortably
+    const count = 40;
+    const spacing = TOTAL_ROAD_LENGTH / count;
 
     for (let i = 0; i < count; i++) {
       for (const side of [-1, 1]) {
         let mesh;
+        let halfWidth;
+
         if (trackDef.envObjects === 'nature') {
-          mesh = buildTree(side);
+          mesh = buildTree();
+          halfWidth = 1.8; // tree crown radius
         } else {
-          mesh = buildBuilding(trackDef, i);
+          const result = buildBuilding(trackDef, i);
+          mesh = result.group;
+          halfWidth = result.halfWidth;
         }
-        const z = -i * 18;
-        const x = side * (ROAD_WIDTH / 2 + 2 + Math.random() * 8);
+
+        const z = -i * spacing;
+        // Minimum clearance: road half-width + curb (0.6) + gap (2.0) + object half-width
+        const minX = ROAD_WIDTH / 2 + 0.6 + 2.0 + halfWidth;
+        const x = side * (minX + Math.random() * 8);
         mesh.position.set(x, 0, z);
         scene.add(mesh);
-        objects.push({ mesh, startZ: z });
+        objects.push({ mesh, spacing: count * spacing });
       }
     }
     return objects;
@@ -238,7 +264,7 @@ const Tracks = (() => {
     body.castShadow = true;
     group.add(body);
 
-    // Windows (small emissive boxes)
+    // Windows (small emissive planes on the road-facing side)
     if (trackDef.hasBuildingLights) {
       const winColor = BUILDING_COLORS_POOL[Math.floor(Math.random() * BUILDING_COLORS_POOL.length)];
       const winMat = new THREE.MeshBasicMaterial({ color: winColor });
@@ -258,10 +284,10 @@ const Tracks = (() => {
         }
       }
     }
-    return group;
+    return { group, halfWidth: w / 2 };
   }
 
-  function buildTree(side) {
+  function buildTree() {
     const group = new THREE.Group();
     const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.5, 7), trunkMat);
@@ -281,12 +307,16 @@ const Tracks = (() => {
   function scrollEnvironment(envData, scrollAmount) {
     const { roadSegments, segmentLength, numSegments } = envData;
 
+    // Move all segments forward
+    roadSegments.forEach(seg => { seg.position.z += scrollAmount; });
+
+    // Recycle any segment that has fully passed the camera
     roadSegments.forEach(seg => {
-      seg.position.z += scrollAmount;
-      if (seg.position.z > segmentLength) {
-        // Recycle to back
+      if (seg.position.z > segmentLength * 0.5) {
+        // Find the segment currently furthest back (most negative Z)
         let minZ = Infinity;
         roadSegments.forEach(s => { if (s.position.z < minZ) minZ = s.position.z; });
+        // Place this segment one segment-length behind the furthest one
         seg.position.z = minZ - segmentLength;
       }
     });
@@ -295,8 +325,9 @@ const Tracks = (() => {
     if (envData.sideObjects) {
       envData.sideObjects.forEach(obj => {
         obj.mesh.position.z += scrollAmount;
-        if (obj.mesh.position.z > 30) {
-          obj.mesh.position.z -= numSegments * segmentLength + 60;
+        // Wrap back when past the camera
+        if (obj.mesh.position.z > 25) {
+          obj.mesh.position.z -= obj.spacing;
         }
       });
     }
@@ -321,5 +352,6 @@ const Tracks = (() => {
     LANE_COUNT,
     LANE_WIDTH,
     SEGMENT_LENGTH,
+    TOTAL_ROAD_LENGTH,
   };
 })();
