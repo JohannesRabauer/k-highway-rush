@@ -64,7 +64,11 @@ const Game = (() => {
   }
 
   function initRenderer(canvas) {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    // logarithmicDepthBuffer greatly improves depth precision for geometry
+    // far from the camera (our road/lines/buildings span hundreds of units),
+    // eliminating residual z-fighting/flicker that a fixed linear depth
+    // buffer still shows once objects are more than ~50-100 units away.
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', logarithmicDepthBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     const { w, h } = getCanvasSize(canvas);
     renderer.setSize(w, h, false);

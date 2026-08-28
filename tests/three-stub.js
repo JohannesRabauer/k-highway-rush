@@ -70,6 +70,7 @@ const THREE = {
   },
   Color: class { constructor(c) { this.value = c; } },
   FogExp2: class { constructor(color, density) { this.color = color; this.density = density; } },
+  Fog: class { constructor(color, near, far) { this.color = color; this.near = near; this.far = far; } },
   PlaneGeometry: Geometry,
   BoxGeometry: Geometry,
   CylinderGeometry: Geometry,

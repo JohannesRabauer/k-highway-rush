@@ -11,9 +11,12 @@ const Tracks = (() => {
       icon: '🏙️',
       desc: 'Wolkenkratzer im hellen Tageslicht',
       skyColor: 0x6ec6ff,
-      fogColor: 0xbfe6ff,
-      fogNear: 50,
-      fogFar: 170,
+      // Fog color must match the sky color, otherwise fogged-out geometry
+      // fades to a different shade than the background and creates a hard
+      // visible "wall" where the two meet (see buildEnvironment()).
+      fogColor: 0x6ec6ff,
+      fogNear: 60,
+      fogFar: 240,
       roadColor: 0x3d3d45,
       lineColor: 0xffffff,
       ambientColor: 0xffffff,
@@ -31,9 +34,9 @@ const Tracks = (() => {
       icon: '🌿',
       desc: 'Offene Felder & Berge',
       skyColor: 0x87ceeb,
-      fogColor: 0xd4f0ff,
-      fogNear: 60,
-      fogFar: 200,
+      fogColor: 0x87ceeb,
+      fogNear: 70,
+      fogFar: 260,
       roadColor: 0x444444,
       lineColor: 0xffff00,
       ambientColor: 0xfff8e0,
@@ -51,9 +54,9 @@ const Tracks = (() => {
       icon: '🌙',
       desc: 'Neon-Lichter in der Dunkelheit',
       skyColor: 0x000011,
-      fogColor: 0x000022,
-      fogNear: 30,
-      fogFar: 100,
+      fogColor: 0x000011,
+      fogNear: 25,
+      fogFar: 110,
       roadColor: 0x111111,
       lineColor: 0xff8800,
       ambientColor: 0x000820,
@@ -71,7 +74,9 @@ const Tracks = (() => {
   const ROAD_WIDTH = 14;    // total road width
   // Lane markings sit slightly above the road plane instead of perfectly
   // coplanar with it, so they never z-fight/flicker with the road surface.
-  const LINE_Y = 0.015;
+  // Kept comfortably large (rather than a hair's-width offset) so the
+  // separation survives depth-buffer precision loss at distance too.
+  const LINE_Y = 0.05;
   // Offset (world Z, relative to a dash tile's own origin) of the tile's
   // frontmost/nearest dash. Must match the "-d * 6 - 2" placement used in
   // buildDashTile() below for d = 0.
@@ -102,9 +107,14 @@ const Tracks = (() => {
   function buildEnvironment(trackDef, scene) {
     const objects = [];
 
-    // Sky / fog
+    // Sky / fog. Linear fog (near/far, tuned per track) fades in gradually
+    // instead of the harsh exponential falloff we used to hardcode — that
+    // made distant geometry hit full fog opacity abruptly, which (combined
+    // with a fog color that didn't match the sky) looked like a flat
+    // "wall" cutting across the scene. Matching fogColor to skyColor above
+    // means even the fully-fogged tail blends seamlessly into the sky.
     scene.background = new THREE.Color(trackDef.skyColor);
-    scene.fog = new THREE.FogExp2(trackDef.fogColor, 0.018);
+    scene.fog = new THREE.Fog(trackDef.fogColor, trackDef.fogNear, trackDef.fogFar);
 
     // Ground plane – sits clearly below road (y=0) to avoid z-fighting
     const groundGeo = new THREE.PlaneGeometry(300, 1400);
@@ -135,7 +145,7 @@ const Tracks = (() => {
     // regardless of viewing distance or depth-buffer precision.
     const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     [-ROAD_WIDTH / 2 + 0.15, ROAD_WIDTH / 2 - 0.15].forEach(ex => {
-      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 2000), edgeMat);
+      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 2000), edgeMat);
       edge.rotation.x = -Math.PI / 2;
       edge.position.set(ex, LINE_Y, -800);
       scene.add(edge);
@@ -213,7 +223,7 @@ const Tracks = (() => {
       const lx = getLaneX(lane) - LANE_WIDTH / 2;
       for (let d = 0; d < dashCount; d++) {
         const dash = new THREE.Mesh(
-          new THREE.PlaneGeometry(0.14, 3.5),
+          new THREE.PlaneGeometry(0.22, 3.5),
           lineMat
         );
         dash.rotation.x = -Math.PI / 2;
