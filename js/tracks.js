@@ -70,9 +70,10 @@ const Tracks = (() => {
   const ROAD_WIDTH = 14;    // total road width
   const LANE_COUNT = 4;
   const LANE_WIDTH = ROAD_WIDTH / LANE_COUNT;
-  // Use two large road tiles that leapfrog — no seam ever near the player
-  const TILE_LENGTH = 200;  // each tile is 200 units long
-  const NUM_SEGMENTS = 2;   // just the two tiles
+  // Marking tiles: small repeated segments just for the dashes (they scroll)
+  // Road surface itself is a single large static plane — never gaps
+  const TILE_LENGTH = 60;   // dash-tile length for recycling markings
+  const NUM_SEGMENTS = 6;   // number of marking tiles
   const TOTAL_ROAD_LENGTH = TILE_LENGTH * NUM_SEGMENTS;
 
   // Lane center X positions
@@ -98,11 +99,48 @@ const Tracks = (() => {
     scene.add(ground);
     objects.push({ mesh: ground, isStatic: true });
 
-    // Road tiles (two large planes that leapfrog — never a seam near the player)
+    // Road surface — single HUGE static plane, never scrolls, never gaps
+    const roadSurface = new THREE.Mesh(
+      new THREE.PlaneGeometry(ROAD_WIDTH, 2000),
+      new THREE.MeshLambertMaterial({
+        color: trackDef.roadColor,
+        polygonOffset: true,
+        polygonOffsetFactor: 2,
+        polygonOffsetUnits: 2,
+      })
+    );
+    roadSurface.rotation.x = -Math.PI / 2;
+    roadSurface.position.set(0, 0, -800); // centered far back, covers all visible z
+    scene.add(roadSurface);
+
+    // Static solid edge lines (don't scroll — no gaps)
+    const edgeMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    [-ROAD_WIDTH / 2 + 0.15, ROAD_WIDTH / 2 - 0.15].forEach(ex => {
+      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 2000), edgeMat);
+      edge.rotation.x = -Math.PI / 2;
+      edge.position.set(ex, 0, -800);
+      scene.add(edge);
+    });
+
+    // Static curbs (don't scroll)
+    [-1, 1].forEach(side => {
+      const curb = new THREE.Mesh(
+        new THREE.BoxGeometry(0.6, 0.12, 2000),
+        new THREE.MeshLambertMaterial({ color: 0x888888 })
+      );
+      curb.position.set(side * (ROAD_WIDTH / 2 + 0.3), 0.06, -800);
+      scene.add(curb);
+    });
+
+    // Scrolling dash-tile groups (only the dashes move — gives illusion of speed)
     const roadSegments = [];
     for (let i = 0; i < NUM_SEGMENTS; i++) {
-      const seg = buildRoadSegment(trackDef);
-      // tile 0 starts at z=0 (front edge at player), tile 1 starts behind it
+      const seg = buildDashTile(trackDef);
       seg.position.z = -i * TILE_LENGTH;
       scene.add(seg);
       roadSegments.push(seg);
@@ -150,24 +188,9 @@ const Tracks = (() => {
     };
   }
 
-  function buildRoadSegment(trackDef) {
+  // Only lane dashes scroll — the road surface is static and never gaps
+  function buildDashTile(trackDef) {
     const group = new THREE.Group();
-
-    // Road surface — one large plane per tile, no coplanar stacking needed
-    const roadGeo = new THREE.PlaneGeometry(ROAD_WIDTH, TILE_LENGTH);
-    const roadMat = new THREE.MeshLambertMaterial({
-      color: trackDef.roadColor,
-      polygonOffset: true,
-      polygonOffsetFactor: 2,
-      polygonOffsetUnits: 2,
-    });
-    const road = new THREE.Mesh(roadGeo, roadMat);
-    road.rotation.x = -Math.PI / 2;
-    road.position.y = 0;
-    road.position.z = -TILE_LENGTH / 2;
-    group.add(road);
-
-    // Lane markings — polygonOffset pulls them in front of the road surface
     const lineMat = new THREE.MeshBasicMaterial({
       color: trackDef.lineColor,
       polygonOffset: true,
@@ -187,31 +210,6 @@ const Tracks = (() => {
         group.add(dash);
       }
     }
-
-    // Outer edge lines
-    const edgeMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-    });
-    [-ROAD_WIDTH / 2 + 0.15, ROAD_WIDTH / 2 - 0.15].forEach(ex => {
-      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.22, TILE_LENGTH), edgeMat);
-      edge.rotation.x = -Math.PI / 2;
-      edge.position.set(ex, 0, -TILE_LENGTH / 2);
-      group.add(edge);
-    });
-
-    // Shoulder / curb — 3D box, no coplanar issue
-    [-1, 1].forEach(side => {
-      const curb = new THREE.Mesh(
-        new THREE.BoxGeometry(0.6, 0.12, TILE_LENGTH),
-        new THREE.MeshLambertMaterial({ color: 0x888888 })
-      );
-      curb.position.set(side * (ROAD_WIDTH / 2 + 0.3), 0.06, -TILE_LENGTH / 2);
-      group.add(curb);
-    });
-
     return group;
   }
 
@@ -309,15 +307,12 @@ const Tracks = (() => {
   function scrollEnvironment(envData, scrollAmount) {
     const { roadSegments } = envData;
 
-    // Move both tiles forward
+    // Only the dash tiles scroll — road surface is static (never gaps/clipping)
     roadSegments.forEach(seg => { seg.position.z += scrollAmount; });
 
-    // When a tile's front edge (position.z) passes the player (z > TILE_LENGTH/2),
-    // it has fully scrolled past — jump it behind the other tile.
-    // The seam always happens at z > 100, well behind what the camera sees.
+    // Recycle dash tile when it fully passes the camera (past z=5)
     roadSegments.forEach(seg => {
-      if (seg.position.z > TILE_LENGTH / 2) {
-        // Find the other tile's position and place this one behind it
+      if (seg.position.z > 5) {
         let minZ = Infinity;
         roadSegments.forEach(s => { if (s.position.z < minZ) minZ = s.position.z; });
         seg.position.z = minZ - TILE_LENGTH;
