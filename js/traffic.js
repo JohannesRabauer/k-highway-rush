@@ -15,6 +15,13 @@ const Traffic = (() => {
   // Spawn configuration
   const SPAWN_Z = -80;   // spawn distance ahead
   const DESPAWN_Z = 20;  // despawn behind player
+  // Minimum bumper-to-bumper gap enforced between two vehicles sharing a
+  // lane, on top of their combined half-lengths — prevents NPC cars from
+  // ever visually overlapping/driving through one another.
+  const MIN_FOLLOW_GAP = 3;
+  // A lane is considered "busy" (won't be used for a new spawn) if it
+  // already has a vehicle within this distance of the spawn point.
+  const SPAWN_CLEARANCE = 18;
 
   let vehicles = [];
   let scene = null;
@@ -36,7 +43,17 @@ const Traffic = (() => {
   }
 
   function spawnVehicle(speed) {
-    const lane = Math.floor(Math.random() * laneCount);
+    // Avoid spawning on top of / just behind a vehicle already near the
+    // spawn point in the same lane (that used to let two NPCs overlap
+    // immediately and "phase" through each other for the first few frames).
+    const availableLanes = [];
+    for (let lane = 0; lane < laneCount; lane++) {
+      const blocked = vehicles.some(v => v.lane === lane && v.mesh.position.z > SPAWN_Z - SPAWN_CLEARANCE);
+      if (!blocked) availableLanes.push(lane);
+    }
+    if (availableLanes.length === 0) return; // all lanes busy — try again next timer tick
+
+    const lane = availableLanes[Math.floor(Math.random() * availableLanes.length)];
     const type = VEHICLE_TYPES[Math.floor(Math.random() * VEHICLE_TYPES.length)];
     const color = NPC_COLORS[Math.floor(Math.random() * NPC_COLORS.length)];
 
@@ -71,7 +88,8 @@ const Traffic = (() => {
 
   function update(dt, roadSpeed, difficulty) {
     spawnTimer -= dt;
-    spawnInterval = Math.max(0.55, 1.8 - difficulty * 0.12);
+    // Traffic gets denser faster as difficulty rises (lower floor, steeper ramp).
+    spawnInterval = Math.max(0.4, 1.7 - difficulty * 0.16);
 
     if (spawnTimer <= 0) {
       spawnVehicle(roadSpeed);
@@ -103,6 +121,36 @@ const Traffic = (() => {
       scene.remove(vehicles[toRemove[i]].mesh);
       vehicles.splice(toRemove[i], 1);
     }
+
+    resolveSameLaneOverlaps();
+  }
+
+  // Prevent NPC vehicles sharing a lane from ever overlapping/driving
+  // through each other: each vehicle is clamped to stay at least
+  // MIN_FOLLOW_GAP (plus combined half-lengths) behind whichever vehicle is
+  // immediately ahead of it in the same lane. Because it re-clamps every
+  // frame against the leader's current (already-clamped) position, a whole
+  // queue of vehicles bunches up smoothly instead of popping or overlapping.
+  function resolveSameLaneOverlaps() {
+    const byLane = new Map();
+    vehicles.forEach(v => {
+      if (!byLane.has(v.lane)) byLane.set(v.lane, []);
+      byLane.get(v.lane).push(v);
+    });
+
+    byLane.forEach(laneVehicles => {
+      // Ahead = larger z (closer to the camera / further along the road).
+      laneVehicles.sort((a, b) => a.mesh.position.z - b.mesh.position.z);
+      for (let i = laneVehicles.length - 1; i > 0; i--) {
+        const leader = laneVehicles[i];
+        const follower = laneVehicles[i - 1];
+        const minGap = leader.length / 2 + follower.length / 2 + MIN_FOLLOW_GAP;
+        const maxFollowerZ = leader.mesh.position.z - minGap;
+        if (follower.mesh.position.z > maxFollowerZ) {
+          follower.mesh.position.z = maxFollowerZ;
+        }
+      }
+    });
   }
 
   // Returns list of vehicles with collision box info

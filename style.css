@@ -300,7 +300,12 @@ html, body {
 
 #btn-pause {
   position: absolute;
-  top: 16px;
+  /* Anchored to the bottom-right corner instead of the top-right, which
+     used to sit directly on top of #hud-speed (both anchored to the same
+     top-right corner) and permanently hid the speed readout. The bottom
+     corner is otherwise unused, so this can never overlap the HUD again
+     regardless of screen size/orientation. */
+  bottom: 20px;
   right: 20px;
   background: rgba(0,0,0,0.5);
   border: 1px solid rgba(255,255,255,0.12);

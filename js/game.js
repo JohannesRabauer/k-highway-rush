@@ -8,7 +8,7 @@ const Game = (() => {
   let state = 'idle'; // idle | running | paused | dead
   let score = 0;
   let highScore = parseInt(localStorage.getItem('hrHighScore') || '0');
-  let speed = 18;          // road scroll speed (units/s)
+  let speed = 20;          // road scroll speed (units/s)
   let difficulty = 0;
   let elapsed = 0;
   let selectedCarDef = null;
@@ -102,7 +102,7 @@ const Game = (() => {
     score = 0;
     difficulty = 0;
     elapsed = 0;
-    speed = 18;
+    speed = 20;
     playerX = PLAYER_START_X;
     targetX = PLAYER_START_X;
     playerLane = Math.floor(Tracks.LANE_COUNT / 2);
@@ -198,8 +198,8 @@ const Game = (() => {
 
   function update(dt) {
     elapsed += dt;
-    difficulty = elapsed / 30; // ramps up every 30s
-    speed = 18 + difficulty * 4;
+    difficulty = elapsed / 22; // ramps up every 22s (was 30s) — gets harder sooner
+    speed = 20 + difficulty * 5.5; // higher base speed + steeper ramp (was 18 + difficulty*4)
 
     // Score: ~1 point per 0.1s, scaled by speed
     score += dt * speed * 0.5;

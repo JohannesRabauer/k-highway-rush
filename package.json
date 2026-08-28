@@ -1,0 +1,9 @@
+{
+  "name": "highway-rush",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Highway Rush – browser highway-dodging game",
+  "scripts": {
+    "test": "node tests/run-all.js"
+  }
+}

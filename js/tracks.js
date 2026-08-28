@@ -71,6 +71,18 @@ const Tracks = (() => {
   // Lane markings sit slightly above the road plane instead of perfectly
   // coplanar with it, so they never z-fight/flicker with the road surface.
   const LINE_Y = 0.015;
+  // Offset (world Z, relative to a dash tile's own origin) of the tile's
+  // frontmost/nearest dash. Must match the "-d * 6 - 2" placement used in
+  // buildDashTile() below for d = 0.
+  const DASH_TILE_FRONT_OFFSET = -2;
+  // With the fixed camera rig (height 7, position z=14, 60° vertical FOV,
+  // tilted to look at z=-10 — see game.js initCamera), the closest point of
+  // the ground that can ever be visible (bottom edge of the screen) sits at
+  // world z ≈ 7.3. A dash tile must not be recycled (teleported far behind)
+  // until its frontmost dash has scrolled past that point, or it visibly
+  // pops/vanishes right in front of the player instead of scrolling off
+  // screen naturally. Keep a comfortable safety margin above 7.3.
+  const ROAD_RECYCLE_VISIBLE_LIMIT_Z = 12;
   const LANE_COUNT = 4;
   const LANE_WIDTH = ROAD_WIDTH / LANE_COUNT;
   // Marking tiles: small repeated segments just for the dashes (they scroll)
@@ -202,7 +214,7 @@ const Tracks = (() => {
           lineMat
         );
         dash.rotation.x = -Math.PI / 2;
-        dash.position.set(lx, LINE_Y, -d * 6 - 2);
+        dash.position.set(lx, LINE_Y, -d * 6 + DASH_TILE_FRONT_OFFSET);
         group.add(dash);
       }
     }
@@ -306,9 +318,12 @@ const Tracks = (() => {
     // Only the dash tiles scroll — road surface is static (never gaps/clipping)
     roadSegments.forEach(seg => { seg.position.z += scrollAmount; });
 
-    // Recycle dash tile when it fully passes the camera (past z=5)
+    // Recycle dash tile only once its frontmost dash has fully scrolled past
+    // the closest point the camera can ever see (see
+    // ROAD_RECYCLE_VISIBLE_LIMIT_Z above) — otherwise it teleports away
+    // while still on screen, which looks like the lane markings vanishing.
     roadSegments.forEach(seg => {
-      if (seg.position.z > 5) {
+      if (seg.position.z + DASH_TILE_FRONT_OFFSET > ROAD_RECYCLE_VISIBLE_LIMIT_Z) {
         let minZ = Infinity;
         roadSegments.forEach(s => { if (s.position.z < minZ) minZ = s.position.z; });
         seg.position.z = minZ - TILE_LENGTH;
