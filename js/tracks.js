@@ -70,9 +70,10 @@ const Tracks = (() => {
   const ROAD_WIDTH = 14;    // total road width
   const LANE_COUNT = 4;
   const LANE_WIDTH = ROAD_WIDTH / LANE_COUNT;
-  const SEGMENT_LENGTH = 60;  // how long each road segment is
-  const NUM_SEGMENTS = 7;     // one extra so there's always overlap at the seam
-  const TOTAL_ROAD_LENGTH = NUM_SEGMENTS * SEGMENT_LENGTH;
+  // Use two large road tiles that leapfrog — no seam ever near the player
+  const TILE_LENGTH = 200;  // each tile is 200 units long
+  const NUM_SEGMENTS = 2;   // just the two tiles
+  const TOTAL_ROAD_LENGTH = TILE_LENGTH * NUM_SEGMENTS;
 
   // Lane center X positions
   function getLaneX(lane) {
@@ -97,11 +98,12 @@ const Tracks = (() => {
     scene.add(ground);
     objects.push({ mesh: ground, isStatic: true });
 
-    // Road segments (tiled, recycled)
+    // Road tiles (two large planes that leapfrog — never a seam near the player)
     const roadSegments = [];
     for (let i = 0; i < NUM_SEGMENTS; i++) {
       const seg = buildRoadSegment(trackDef);
-      seg.position.z = -i * SEGMENT_LENGTH;
+      // tile 0 starts at z=0 (front edge at player), tile 1 starts behind it
+      seg.position.z = -i * TILE_LENGTH;
       scene.add(seg);
       roadSegments.push(seg);
     }
@@ -151,30 +153,31 @@ const Tracks = (() => {
   function buildRoadSegment(trackDef) {
     const group = new THREE.Group();
 
-    // Road surface at y=0 (ground is at y=-0.05, markings stacked above)
-    const roadGeo = new THREE.PlaneGeometry(ROAD_WIDTH, SEGMENT_LENGTH);
+    // Road surface — one large plane per tile, no coplanar stacking needed
+    const roadGeo = new THREE.PlaneGeometry(ROAD_WIDTH, TILE_LENGTH);
     const roadMat = new THREE.MeshLambertMaterial({
       color: trackDef.roadColor,
       polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
+      polygonOffsetFactor: 2,
+      polygonOffsetUnits: 2,
     });
     const road = new THREE.Mesh(roadGeo, roadMat);
     road.rotation.x = -Math.PI / 2;
     road.position.y = 0;
-    road.position.z = -SEGMENT_LENGTH / 2;
+    road.position.z = -TILE_LENGTH / 2;
     group.add(road);
 
-    // Road markings – use polygonOffset so they never flicker against the road
+    // Lane markings — polygonOffset pulls them in front of the road surface
     const lineMat = new THREE.MeshBasicMaterial({
       color: trackDef.lineColor,
       polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
     });
+    const dashCount = Math.ceil(TILE_LENGTH / 6);
     for (let lane = 1; lane < LANE_COUNT; lane++) {
       const lx = getLaneX(lane) - LANE_WIDTH / 2;
-      for (let d = 0; d < 10; d++) {
+      for (let d = 0; d < dashCount; d++) {
         const dash = new THREE.Mesh(
           new THREE.PlaneGeometry(0.14, 3.5),
           lineMat
@@ -185,28 +188,27 @@ const Tracks = (() => {
       }
     }
 
-    // Outer edge lines – also polygonOffset
+    // Outer edge lines
     const edgeMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
     });
     [-ROAD_WIDTH / 2 + 0.15, ROAD_WIDTH / 2 - 0.15].forEach(ex => {
-      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.22, SEGMENT_LENGTH), edgeMat);
+      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.22, TILE_LENGTH), edgeMat);
       edge.rotation.x = -Math.PI / 2;
-      edge.position.set(ex, 0, -SEGMENT_LENGTH / 2);
+      edge.position.set(ex, 0, -TILE_LENGTH / 2);
       group.add(edge);
     });
 
-    // Shoulder / curb – a 3D box sitting ON the ground, not coplanar with anything
+    // Shoulder / curb — 3D box, no coplanar issue
     [-1, 1].forEach(side => {
       const curb = new THREE.Mesh(
-        new THREE.BoxGeometry(0.6, 0.12, SEGMENT_LENGTH),
+        new THREE.BoxGeometry(0.6, 0.12, TILE_LENGTH),
         new THREE.MeshLambertMaterial({ color: 0x888888 })
       );
-      // Top of curb at y=0.06, base at y=-0.06 (below road surface plane)
-      curb.position.set(side * (ROAD_WIDTH / 2 + 0.3), 0.06, -SEGMENT_LENGTH / 2);
+      curb.position.set(side * (ROAD_WIDTH / 2 + 0.3), 0.06, -TILE_LENGTH / 2);
       group.add(curb);
     });
 
@@ -305,19 +307,20 @@ const Tracks = (() => {
 
   // Advance environment scroll (call each frame)
   function scrollEnvironment(envData, scrollAmount) {
-    const { roadSegments, segmentLength, numSegments } = envData;
+    const { roadSegments } = envData;
 
-    // Move all segments forward
+    // Move both tiles forward
     roadSegments.forEach(seg => { seg.position.z += scrollAmount; });
 
-    // Recycle any segment that has fully passed the camera
+    // When a tile's front edge (position.z) passes the player (z > TILE_LENGTH/2),
+    // it has fully scrolled past — jump it behind the other tile.
+    // The seam always happens at z > 100, well behind what the camera sees.
     roadSegments.forEach(seg => {
-      if (seg.position.z > segmentLength * 0.5) {
-        // Find the segment currently furthest back (most negative Z)
+      if (seg.position.z > TILE_LENGTH / 2) {
+        // Find the other tile's position and place this one behind it
         let minZ = Infinity;
         roadSegments.forEach(s => { if (s.position.z < minZ) minZ = s.position.z; });
-        // Place this segment one segment-length behind the furthest one
-        seg.position.z = minZ - segmentLength;
+        seg.position.z = minZ - TILE_LENGTH;
       }
     });
 
@@ -325,7 +328,6 @@ const Tracks = (() => {
     if (envData.sideObjects) {
       envData.sideObjects.forEach(obj => {
         obj.mesh.position.z += scrollAmount;
-        // Wrap back when past the camera
         if (obj.mesh.position.z > 25) {
           obj.mesh.position.z -= obj.spacing;
         }
@@ -351,7 +353,7 @@ const Tracks = (() => {
     ROAD_WIDTH,
     LANE_COUNT,
     LANE_WIDTH,
-    SEGMENT_LENGTH,
+    SEGMENT_LENGTH: TILE_LENGTH,
     TOTAL_ROAD_LENGTH,
   };
 })();
