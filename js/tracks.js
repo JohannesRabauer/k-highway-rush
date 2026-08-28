@@ -183,7 +183,7 @@ const Tracks = (() => {
       roadSegments,
       sideObjects,
       lightPosts,
-      segmentLength: SEGMENT_LENGTH,
+      segmentLength: TILE_LENGTH,
       numSegments: NUM_SEGMENTS,
     };
   }
