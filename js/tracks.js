@@ -68,6 +68,9 @@ const Tracks = (() => {
   ];
 
   const ROAD_WIDTH = 14;    // total road width
+  // Lane markings sit slightly above the road plane instead of perfectly
+  // coplanar with it, so they never z-fight/flicker with the road surface.
+  const LINE_Y = 0.015;
   const LANE_COUNT = 4;
   const LANE_WIDTH = ROAD_WIDTH / LANE_COUNT;
   // Marking tiles: small repeated segments just for the dashes (they scroll)
@@ -113,17 +116,15 @@ const Tracks = (() => {
     roadSurface.position.set(0, 0, -800); // centered far back, covers all visible z
     scene.add(roadSurface);
 
-    // Static solid edge lines (don't scroll — no gaps)
-    const edgeMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-    });
+    // Static solid edge lines (don't scroll — no gaps).
+    // Raised slightly above the road surface (instead of sitting perfectly
+    // coplanar with it) so they never z-fight/flicker with the road,
+    // regardless of viewing distance or depth-buffer precision.
+    const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     [-ROAD_WIDTH / 2 + 0.15, ROAD_WIDTH / 2 - 0.15].forEach(ex => {
       const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 2000), edgeMat);
       edge.rotation.x = -Math.PI / 2;
-      edge.position.set(ex, 0, -800);
+      edge.position.set(ex, LINE_Y, -800);
       scene.add(edge);
     });
 
@@ -191,12 +192,7 @@ const Tracks = (() => {
   // Only lane dashes scroll — the road surface is static and never gaps
   function buildDashTile(trackDef) {
     const group = new THREE.Group();
-    const lineMat = new THREE.MeshBasicMaterial({
-      color: trackDef.lineColor,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-    });
+    const lineMat = new THREE.MeshBasicMaterial({ color: trackDef.lineColor });
     const dashCount = Math.ceil(TILE_LENGTH / 6);
     for (let lane = 1; lane < LANE_COUNT; lane++) {
       const lx = getLaneX(lane) - LANE_WIDTH / 2;
@@ -206,7 +202,7 @@ const Tracks = (() => {
           lineMat
         );
         dash.rotation.x = -Math.PI / 2;
-        dash.position.set(lx, 0, -d * 6 - 2);
+        dash.position.set(lx, LINE_Y, -d * 6 - 2);
         group.add(dash);
       }
     }

@@ -48,18 +48,33 @@ const Game = (() => {
   let crashParticles = [];
 
   // ---- Init renderer ----
+  // Some mobile browsers report clientWidth/clientHeight as 0 for a canvas
+  // right after its parent screen becomes visible (layout not settled yet,
+  // address-bar animations, etc). Fall back to the viewport size so the
+  // renderer/camera never get initialized with a degenerate 0x0 / NaN size,
+  // which otherwise produces a black frame that never recovers.
+  function getCanvasSize(canvas) {
+    let w = canvas.clientWidth;
+    let h = canvas.clientHeight;
+    if (!w || !h) {
+      w = window.innerWidth || document.documentElement.clientWidth || 1;
+      h = window.innerHeight || document.documentElement.clientHeight || 1;
+    }
+    return { w, h };
+  }
+
   function initRenderer(canvas) {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+    const { w, h } = getCanvasSize(canvas);
+    renderer.setSize(w, h, false);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputEncoding = THREE.sRGBEncoding;
   }
 
   function initCamera() {
-    const w = renderer.domElement.clientWidth;
-    const h = renderer.domElement.clientHeight;
+    const { w, h } = getCanvasSize(renderer.domElement);
     camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 500);
     // Position camera behind and above player
     camera.position.set(0, 7, 14);
@@ -69,8 +84,7 @@ const Game = (() => {
   function onResize() {
     if (!renderer || !camera) return;
     const canvas = renderer.domElement;
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
+    const { w, h } = getCanvasSize(canvas);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -100,7 +114,8 @@ const Game = (() => {
     if (!renderer) {
       initRenderer(canvas);
     } else {
-      renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+      const { w, h } = getCanvasSize(canvas);
+      renderer.setSize(w, h, false);
     }
 
     // Build scene
@@ -130,6 +145,13 @@ const Game = (() => {
     lastTime = performance.now();
     if (animFrameId) cancelAnimationFrame(animFrameId);
     loop(performance.now());
+
+    // Re-sync renderer/camera size on the next frame(s): on some mobile
+    // browsers the canvas' real layout size (address bar collapse, safe
+    // areas, etc.) only settles a frame or two after the screen becomes
+    // visible, which previously left the very first frames black.
+    requestAnimationFrame(onResize);
+    requestAnimationFrame(() => requestAnimationFrame(onResize));
   }
 
   function pauseGame() {
@@ -183,8 +205,7 @@ const Game = (() => {
     score += dt * speed * 0.5;
     if (onScoreUpdate) onScoreUpdate(Math.floor(score), Math.floor(speed * 3.6));
 
-    // Input: move toward target lane
-    handleKeyInput();
+    // Input: move toward target lane (lane changes are edge-triggered on keydown, see setupInput)
     const dx = targetX - playerX;
     const step = Math.sign(dx) * Math.min(Math.abs(dx), MOVE_SPEED * dt);
     playerX += step;
@@ -278,27 +299,24 @@ const Game = (() => {
   }
 
   // ---- Input ----
-  function handleKeyInput() {
-    const LEFT = keys['ArrowLeft'] || keys['a'] || keys['A'];
-    const RIGHT = keys['ArrowRight'] || keys['d'] || keys['D'];
-
-    if (LEFT) {
-      playerLane = Math.max(0, playerLane - 1);
-      targetX = LANE_X[playerLane];
-    } else if (RIGHT) {
-      playerLane = Math.min(Tracks.LANE_COUNT - 1, playerLane + 1);
-      targetX = LANE_X[playerLane];
-    }
-  }
-
   let keydownHandler, keyupHandler, touchstartHandler, touchendHandler, resizeHandler;
 
   function setupInput(canvas) {
     keydownHandler = e => {
-      if (keys[e.key]) return;
+      if (keys[e.key]) return; // ignore OS key-repeat & already-held keys
       keys[e.key] = true;
-      if ((e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') ||
-          (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D')) {
+
+      const isLeft = (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A');
+      const isRight = (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D');
+
+      // One lane-change per physical key press — no continuous drift while held.
+      if (isLeft) {
+        playerLane = Math.max(0, playerLane - 1);
+        targetX = LANE_X[playerLane];
+        Audio.sfxDodge();
+      } else if (isRight) {
+        playerLane = Math.min(Tracks.LANE_COUNT - 1, playerLane + 1);
+        targetX = LANE_X[playerLane];
         Audio.sfxDodge();
       }
     };
@@ -330,13 +348,19 @@ const Game = (() => {
       touchLocked = true;
     };
 
-    resizeHandler = () => onResize();
+    resizeHandler = () => {
+      // Fire immediately and once more next frame — mobile viewport size
+      // (address bar show/hide, orientation change) can settle a frame late.
+      onResize();
+      requestAnimationFrame(onResize);
+    };
 
     document.addEventListener('keydown', keydownHandler);
     document.addEventListener('keyup', keyupHandler);
     canvas.addEventListener('touchstart', touchstartHandler, { passive: true });
     canvas.addEventListener('touchend', touchendHandler, { passive: true });
     window.addEventListener('resize', resizeHandler);
+    window.addEventListener('orientationchange', resizeHandler);
   }
 
   function teardownInput() {
@@ -348,6 +372,7 @@ const Game = (() => {
       canvas.removeEventListener('touchend', touchendHandler);
     }
     window.removeEventListener('resize', resizeHandler);
+    window.removeEventListener('orientationchange', resizeHandler);
     Object.keys(keys).forEach(k => { keys[k] = false; });
   }
 
